@@ -17,6 +17,7 @@ from API.permissions import *
 from django.conf import settings
 import redis
 import uuid
+from rest_framework.pagination import PageNumberPagination
 
 session_storage = redis.Redis(host='localhost', port=6380, db=0)
 
@@ -36,27 +37,32 @@ class StationsList(APIView):
     model_class = Station
     serializer_class = StationSerializer
     permission_classes = [IsManagerOrGetOnly]
+    paginator_class = PageNumberPagination
 
     @swagger_auto_schema(manual_parameters=[stations_param],responses={200:stations_response})
     def get(self, request, format=None):
-        station_name = request.GET.get("station_name")
         user = getUser(request)
         if(user):
             currentReport = Temperature_report.objects.filter(status='Draft', creator_id = user.id).first()
         else:
             currentReport = None
+
+        station_name = request.GET.get("station_name")
         if(station_name):
-            stations = self.model_class.objects.filter(status = 'A').filter(short_name__icontains = station_name)
+            stations = self.model_class.objects.filter(status = 'A').filter(short_name__icontains = station_name).order_by('id')
         else:
-            stations = self.model_class.objects.filter(status = 'A')
+            stations = self.model_class.objects.filter(status = 'A').order_by('id')
+        
+        paginator = self.paginator_class()
+        stations = paginator.paginate_queryset(stations,self.request,self)
+
         serializer = self.serializer_class(stations, many=True)
-        if(not currentReport):
-            data = {"current_report":None, "stations_count":0, "stations":serializer.data}
-            return Response(data)
-        data = {"current_report":currentReport.id,"stations_count":Temperature_report.objects.get_stations_count(currentReport),
-                "stations":serializer.data}
-        return Response(data)
-    
+        data = {
+            "current_report": currentReport.id if currentReport else None,
+            "stations_count": Temperature_report.objects.get_stations_count(currentReport) if currentReport else 0,
+            "stations": serializer.data,
+        }
+        return paginator.get_paginated_response(data) 
     
     @swagger_auto_schema(request_body=serializer_class)
     def post(self, request, format=None):
@@ -125,7 +131,7 @@ class ReportDetail(APIView):
             return Response(status=status.HTTP_403_FORBIDDEN)
         if report.status == 'Deleted':
             return Response(data="report is deleted",status=status.HTTP_400_BAD_REQUEST)
-        report_date = request.data['report-date']
+        report_date = request.data
         report_date = datetime.datetime.strptime(report_date,"%d.%m.%Y")
         report.report_date = report_date
         report.save()
@@ -143,8 +149,8 @@ end_date_param = openapi.Parameter('end-date', openapi.IN_QUERY, description="Ф
 @permission_classes([IsAuthenticated])
 def get_reports(request, format=None):
     filter_status = request.GET.get("status")
-    start_date = request.GET.get("start-date")
-    end_date = request.GET.get("end-date")
+    start_date = request.GET.get("startDate")
+    end_date = request.GET.get("endDate")
     user = getUser(request)
     if(user.is_staff or user.is_superuser):
         reports = Temperature_report.objects.exclude(status='Draft').exclude(status="Deleted")
@@ -153,10 +159,10 @@ def get_reports(request, format=None):
     if(filter_status):
         reports = reports.filter(status = filter_status.capitalize())
     if(start_date):
-        start_date = datetime.datetime.strptime(start_date,"%d.%m.%Y")
+        start_date = datetime.datetime.strptime(start_date,"%Y-%m-%d")
         reports = reports.filter(formation_date__gte = start_date)
     if(end_date):
-        end_date = datetime.datetime.strptime(end_date,"%d.%m.%Y")
+        end_date = datetime.datetime.strptime(end_date,"%Y-%m-%d")
         reports = reports.filter(formation_date__lte = end_date)
     serializer = Temperature_reportsSerializer(reports, many=True)
     return Response(serializer.data)
@@ -276,7 +282,7 @@ def put_temperature(request, report_id, station_id, format=None):
         return Response(data="report is not in draft",status=status.HTTP_400_BAD_REQUEST)
     station = get_object_or_404(Station, id = station_id)
     station_report = get_object_or_404(Station_report, station_id = station, report_id = report)
-    station_report.temperature = request.data['temperature']
+    station_report.temperature = request.data
     station_report.save()
     return Response(status=status.HTTP_200_OK)
 
@@ -316,6 +322,7 @@ auth_response = openapi.Response("session cookie",auth_schema)
 @api_view(['Post'])
 @permission_classes([AllowAny])
 def authentication(request, format=None):
+    print(request.data)
     username = request.data.get('username')
     password = request.data.get("password")
     user = authenticate(request, username=username, password=password)

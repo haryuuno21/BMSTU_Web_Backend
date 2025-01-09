@@ -41,18 +41,20 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_yasg',
     'API',
-    'corsheaders',
+#    'corsheaders',
 ]
 
 REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 9,
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
     ],
 }
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.common.CommonMiddleware',
+#    'corsheaders.middleware.CorsMiddleware',
+#    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -93,7 +95,7 @@ DATABASES = {
         'USER': 'Haryuuno',
         'PASSWORD': 'qwe123',
         'HOST': 'localhost',
-        'PORT': 32769,
+        'PORT': 32768,
     }
 }
 
